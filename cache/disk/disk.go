@@ -259,6 +259,25 @@ func (c *diskCache) Put(ctx context.Context, kind cache.EntryKind, hash string, 
 		return nil
 	}
 
+	// Skip redundant CAS writes. CAS is content-addressed, so if a blob
+	// with the same hash already exists on disk, re-uploading it produces
+	// identical content. Skipping avoids the overwrite path in lru.Add()
+	// which deletes the old file and creates a race window where concurrent
+	// readers see a stale LRU entry pointing to the now-deleted file.
+	if kind == cache.CAS && size > 0 {
+		key := cache.LookupKey(kind, hash)
+		c.mu.Lock()
+		item, elem := c.lru.Get(key)
+		c.mu.Unlock()
+		if elem != nil && !isSizeMismatch(size, item.size) {
+			existingPath := path.Join(c.dir, c.FileLocation(kind, item.legacy, hash, item.size, item.random))
+			if _, statErr := os.Stat(existingPath); statErr == nil {
+				// File exists with matching hash and size — no-op.
+				return nil
+			}
+		}
+	}
+
 	// Put requests are processed using blocking file syscalls, which
 	// consume one operating system thread per request. We throttle
 	// these requests with a semaphore to avoid creating too many
