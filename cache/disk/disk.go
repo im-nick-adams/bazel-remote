@@ -479,6 +479,15 @@ func (c *diskCache) availableOrTryProxy(kind cache.EntryKind, hash string, size 
 			if err != nil {
 				// Race condition, was the item purged after we released the lock?
 				log.Printf("Warning: expected %q to exist on disk, undersized cache?", blobPath)
+
+				// Remove the stale LRU entry so it doesn't produce
+				// this warning on every subsequent access.
+				c.mu.Lock()
+				_, elem := c.lru.Get(key)
+				if elem != nil {
+					c.lru.RemoveElement(elem)
+				}
+				c.mu.Unlock()
 			} else if kind == cache.CAS {
 				var rc io.ReadCloser
 				if item.legacy {
