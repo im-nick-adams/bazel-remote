@@ -472,6 +472,10 @@ func (c *diskCache) availableOrTryProxy(kind cache.EntryKind, hash string, size 
 				if listElem != nil {
 					blobPath = path.Join(c.dir, c.FileLocation(kind, item.legacy, hash, item.size, item.random))
 					f, err = os.Open(blobPath)
+					if err != nil {
+						// We will log the error below, while not holding the lock.
+						c.lru.RemoveElement(listElem)
+					}
 				}
 				c.mu.Unlock()
 			}
